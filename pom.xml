@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.rupeek</groupId>
+    <artifactId>hotel-booking-service</artifactId>
+    <version>1.0.0</version>
+    <name>hotel-booking-service</name>
+    <description>Hotel booking platform backend - SDE-3 machine coding round</description>
+
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!--
+          Actuator earns its place here rather than being "one more starter": its health endpoint is
+          how the launcher script proves the service actually reached Postgres and Redis, instead of
+          assuming a started process means a connected one.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!--
+          Redis is used for exactly one thing: a distributed lock so the hold-expiry sweeper runs
+          once across a cluster instead of once per instance. It is inactive unless the `redis`
+          profile is on.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Default persistence: in-memory, zero setup. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          Postgres is opt-in via the `postgres` profile. Having both drivers on the classpath is what
+          makes the repository-port abstraction demonstrable rather than merely asserted: the same
+          code runs on either, and only a profile changes.
+        -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          Serves an OpenAPI 3 document from the controllers and Bean Validation annotations that are
+          already there, plus a Swagger UI at /swagger-ui.html. No annotations were added to the
+          controllers for it: if the API description needs hand-maintaining to stay correct, it will
+          drift.
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.7.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+          Runs the test suite against a real PostgreSQL instead of H2.
+
+          This exists because the obvious way to do it does not work. The integration tests declare
+          `@ActiveProfiles("test")`, and that annotation wins over `SPRING_PROFILES_ACTIVE` — so
+          exporting the postgres profile silently leaves the tests on H2 while looking like it
+          worked. Adding the profile via `spring.profiles.include` is worse: both profiles end up
+          active, `test` is applied last so H2 keeps the datasource URL, but the postgres profile's
+          `connection-init-sql` comes along too, and H2 cannot parse `SET lock_timeout = '10s'`.
+
+          So the datasource is set directly here, as surefire system properties, which outrank both
+          YAML files and leave no room for a half-applied profile.
+
+          Why it is worth running: the double-booking defence rests on
+          `SELECT ... ORDER BY ... FOR UPDATE`. H2 accepts that syntax, but PostgreSQL is where the
+          row-level locking semantics are unambiguous — so this is the configuration in which the
+          concurrency test is actually evidence rather than a strong indication.
+
+          Uses its own database so a test run can never truncate the one you were demoing against:
+
+            createdb -O hotelbooking hotelbooking_test
+            ./mvnw test -Ppostgres-it -Dtest=ConcurrentBookingIntegrationTest
+        -->
+        <profile>
+            <id>postgres-it</id>
+            <properties>
+                <it.postgres.host>localhost</it.postgres.host>
+                <it.postgres.port>5432</it.postgres.port>
+                <it.postgres.db>hotelbooking_test</it.postgres.db>
+                <it.postgres.user>hotelbooking</it.postgres.user>
+                <it.postgres.password>hotelbooking</it.postgres.password>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <spring.datasource.url>jdbc:postgresql://${it.postgres.host}:${it.postgres.port}/${it.postgres.db}</spring.datasource.url>
+                                <spring.datasource.driver-class-name>org.postgresql.Driver</spring.datasource.driver-class-name>
+                                <spring.datasource.username>${it.postgres.user}</spring.datasource.username>
+                                <spring.datasource.password>${it.postgres.password}</spring.datasource.password>
+                                <!-- The Postgres equivalent of the LOCK_TIMEOUT on the H2 test URL:
+                                     a booking blocked behind another's row lock must fail fast
+                                     rather than hold a connection indefinitely. -->
+                                <spring.datasource.hikari.connection-init-sql>SET lock_timeout = '10s'</spring.datasource.hikari.connection-init-sql>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

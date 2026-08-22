@@ -1,0 +1,35 @@
+# Redis, for one purpose: a cluster-safe lock on the hold-expiry sweeper.
+#
+# Activating this profile swaps InProcessSweepLock for RedisSweepLock. Nothing else in the service
+# changes, and no business code learns that Redis exists — HoldExpirySweeper depends on the SweepLock
+# interface and takes whichever bean the context produced.
+#
+# Deliberately NOT used for caching search results. Inventory changes on every booking, so a cached
+# availability answer is a wrong availability answer, and the invalidation logic needed to make it
+# safe would be more delicate than the query it replaced.
+#
+#   SPRING_PROFILES_ACTIVE=redis ./mvnw spring-boot:run
+#   ./run.sh --redis
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Fail fast. A sweeper that hangs waiting for Redis is worse than one that skips a tick.
+      timeout: 2s
+      connect-timeout: 2s
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 8
+          max-idle: 4
+          min-idle: 1
+
+management:
+  health:
+    redis:
+      # Re-enabled here (the default profile turns it off). Under this profile Redis is a genuine
+      # dependency, so /actuator/health should go DOWN when it is unreachable — that is exactly the
+      # signal the launcher script waits on to prove connectivity rather than assume it.
+      enabled: true

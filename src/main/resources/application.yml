@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: hotel-booking-service
+
+  datasource:
+    # In-memory H2. DB_CLOSE_DELAY keeps the schema alive between connections; the service is a
+    # prototype, so the database is deliberately ephemeral and re-seeded on every boot.
+    # LOCK_TIMEOUT is set on the URL rather than through JPA hints: H2's default is one second,
+    # which is long enough for a real lock wait to look like a spurious failure under load.
+    url: jdbc:h2:mem:hotelbooking;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    hikari:
+      # Small pool on purpose. The booking path holds row locks, so a modest pool makes lock
+      # contention visible in testing instead of hiding it behind hundreds of idle connections.
+      maximum-pool-size: 20
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false      # off deliberately: lazy loading belongs inside a service transaction
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100    # onboarding inserts a year of nightly inventory per room type
+        order_inserts: true
+        order_updates: true
+        # 3 seconds, not the default of waiting forever. A booking blocked on another booking's row
+        # lock should fail fast and let the caller retry, rather than tie up a connection.
+        jakarta:
+          persistence:
+            lock:
+              timeout: 3000
+
+  h2:
+    console:
+      enabled: true          # browse the data at http://localhost:8080/h2-console
+      path: /h2-console
+
+hotel-booking:
+  inventory:
+    # How far ahead nightly inventory rows are created when a room type is onboarded.
+    booking-horizon-days: 365
+  booking:
+    # How long an unpaid booking keeps holding its rooms.
+    payment-hold-minutes: 15
+    # How often the sweeper looks for lapsed holds.
+    hold-sweep-interval-ms: 60000
+  demo-data:
+    enabled: true            # seed a few properties so the API is explorable straight after boot
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only what is needed. The launcher script polls health to know when the service is genuinely
+        # ready — "the process started" and "the process can reach its database" are different claims.
+        include: health,info
+  endpoint:
+    health:
+      show-details: always      # so the per-dependency components (db, redis) are visible
+      show-components: always
+  health:
+    redis:
+      # Off by default. spring-boot-starter-data-redis is on the classpath for the `redis` profile,
+      # and its health indicator would otherwise try to ping a Redis that is not running and drive
+      # /actuator/health to DOWN — making the default zero-dependency run look broken.
+      enabled: false
+
+logging:
+  level:
+    com.rupeek.hotelbooking: DEBUG
+
+server:
+  port: 8080

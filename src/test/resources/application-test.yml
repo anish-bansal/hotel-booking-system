@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:hotelbooking_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+    hikari:
+      # Must comfortably exceed the thread count of the concurrency test: every contending booking
+      # holds a connection while it waits on a row lock. Too small a pool and the test would be
+      # measuring pool starvation rather than the locking it is meant to prove.
+      maximum-pool-size: 30
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+        order_inserts: true
+
+hotel-booking:
+  inventory:
+    # 90 days rather than 365: tests only book days ahead, and a shorter horizon means far fewer
+    # inventory inserts per onboarded property, which keeps the suite fast.
+    booking-horizon-days: 90
+  booking:
+    payment-hold-minutes: 15
+    # Effectively disabled. The sweeper must not fire on a timer during tests - hold expiry is
+    # asserted by calling the service method directly, so the result is deterministic.
+    hold-sweep-interval-ms: 3600000
+  demo-data:
+    enabled: false
+
+logging:
+  level:
+    com.rupeek.hotelbooking: INFO
+    org.hibernate.SQL: WARN

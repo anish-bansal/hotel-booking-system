@@ -1,0 +1,44 @@
+# External services for the `postgres` and `redis` profiles.
+#
+# Both carry healthchecks rather than leaving readiness to a sleep. `docker compose up -d` returns as
+# soon as the containers are *started*, which is several seconds before Postgres will accept a
+# connection — so a script that proceeded on "up" would fail intermittently in a way that looks like
+# a bug in the application. run.sh waits on these healthchecks instead.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hotel-booking-postgres
+    environment:
+      POSTGRES_DB: hotelbooking
+      POSTGRES_USER: hotelbooking
+      POSTGRES_PASSWORD: hotelbooking
+    ports:
+      - "5432:5432"
+    volumes:
+      - hotel-booking-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -U matters: without it pg_isready checks for the `root` role and reports healthy while the
+      # application's role is still being created by the init scripts.
+      test: ["CMD-SHELL", "pg_isready -U hotelbooking -d hotelbooking"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: hotel-booking-redis
+    ports:
+      - "6379:6379"
+    # No persistence configured. The only thing stored is a short-lived sweeper lock; losing it on
+    # restart is harmless, and an AOF/RDB file would be pure overhead.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  hotel-booking-pgdata:

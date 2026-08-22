@@ -1,0 +1,55 @@
+# Real Postgres instead of in-memory H2.
+#
+# The point of this file is that it is the ONLY thing that changes. No repository, service, entity or
+# query is different — which is what the domain-owned repository ports were for. If swapping the
+# database required touching anything under `domain` or `application`, the abstraction would have
+# been decoration.
+#
+# It also settles a question H2 could only answer approximately: Postgres unambiguously supports
+# `SELECT ... ORDER BY ... FOR UPDATE`, which is the mechanism the whole double-booking defence rests
+# on. Running the concurrency test under this profile is the real proof.
+#
+#   SPRING_PROFILES_ACTIVE=postgres ./mvnw spring-boot:run
+#   ./run.sh --postgres
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:hotelbooking}
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:hotelbooking}
+    password: ${POSTGRES_PASSWORD:hotelbooking}
+    hikari:
+      maximum-pool-size: 20
+      # Postgres waits forever on a row lock by default. A booking blocked behind another booking's
+      # lock should fail fast and let the caller retry, not hold a connection indefinitely — this is
+      # the Postgres equivalent of the LOCK_TIMEOUT on the H2 URL.
+      connection-init-sql: SET lock_timeout = '10s'
+
+  jpa:
+    hibernate:
+      # `update` rather than `create-drop`: a real database should survive a restart, and wiping the
+      # schema on shutdown would make the persistence swap pointless to demonstrate. A production
+      # system uses Flyway or Liquibase — see the README's next steps.
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
+
+  h2:
+    console:
+      enabled: false
+
+hotel-booking:
+  # Off by default here. Unlike H2, this database persists, so re-seeding on every boot would pile up
+  # duplicate demo properties. Turn it on for a first run against an empty database:
+  #   ./run.sh --postgres --seed
+  demo-data:
+    enabled: false
+
+logging:
+  level:
+    com.rupeek.hotelbooking: DEBUG

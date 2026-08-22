@@ -1,0 +1,31 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### IDE ###
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+
+### Local run artifacts ###
+.run/
+
+### Sync tooling artifacts (not part of the project) ###
+_sync_artifacts/
+_sync.zip
+MANIFEST.sha256
+
+### Stray empty clone of the same repo (see README) ###
+hotel-booking/
