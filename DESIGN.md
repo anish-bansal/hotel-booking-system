@@ -545,6 +545,16 @@ last room worse than a queue?), and because a multi-night stay means N rows can 
 lose, so a single conflict re-runs the whole check. Pessimistic locking makes the contended case
 *boring*, which is what I want in the code path that must not be wrong.
 
+**Rejected for inventory, used for `Booking`.** The two have different shapes and get different
+answers. Inventory contention is expected, concentrated on known rows, and spans N nights at once —
+exactly where pessimistic locking pays. A booking is contended only by accident: a guest paying while
+support cancels, say. Nothing serialised *that*, because paying and cancelling touch no common
+inventory row, and the dangerous interleaving is silent — a cancellation can evaluate the refund,
+correctly find no payment settled yet, and record "nothing to refund" just before the payment
+commits, leaving the guest charged, cancelled and never refunded. `@Version` on `Booking` makes the
+second writer fail loudly instead. One row, no retry loop, no storm — none of the objections above
+apply. `ConcurrentBookingIntegrationTest` pins it.
+
 ### Atomic conditional UPDATE
 
 ```sql
