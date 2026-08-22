@@ -29,3 +29,6 @@ MANIFEST.sha256
 
 ### Stray empty clone of the same repo (see README) ###
 hotel-booking/
+
+### Local-only notes (not for the repo) ###
+README.local.md
