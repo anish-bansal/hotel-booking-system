@@ -34,3 +34,4 @@ hotel-booking/
 README.local.md
 DIAGRAMS.local.md
 diagrams.local/
+*.code-workspace
