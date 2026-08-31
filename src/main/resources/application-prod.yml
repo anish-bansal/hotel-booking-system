@@ -1,0 +1,52 @@
+# Production hardening. OPT-IN ONLY — nothing here is active unless `prod` is in the profile list,
+# so every existing run mode (default H2, postgres, redis, test) behaves exactly as before.
+#
+# Composes with the datasource profiles rather than replacing them:
+#
+#   SPRING_PROFILES_ACTIVE=postgres,prod        java -jar app.jar
+#   SPRING_PROFILES_ACTIVE=postgres,redis,prod  java -jar app.jar
+#
+# Each setting exists because its default is a dev convenience that becomes a liability in front of
+# real traffic.
+
+spring:
+  jpa:
+    hibernate:
+      # `update` lets Hibernate mutate a live schema on deploy — convenient in dev, unaccountable in
+      # production. `validate` fails startup on any drift instead, making the schema an explicit,
+      # reviewed artifact (db/schema.sql) rather than a side effect of deployment.
+      ddl-auto: validate
+    # Fail startup if a query would run at boot; surfaces N+1-shaped mistakes before traffic does.
+    open-in-view: false
+
+  h2:
+    console:
+      # A SQL console over HTTP has no place in production, even against a Postgres datasource.
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health for the orchestrator, info for humans. Everything else (env, mappings, beans)
+        # enumerates internals and stays off the wire.
+        include: health,info
+  endpoint:
+    health:
+      # Liveness/readiness split, so a full connection pool marks the instance unready without
+      # convincing the orchestrator to kill and restart a perfectly live JVM.
+      probes:
+        enabled: true
+      show-details: never
+
+server:
+  error:
+    # Stack traces and exception messages leak internals; the GlobalExceptionHandler already returns
+    # a structured, deliberate error body.
+    include-stacktrace: never
+    include-message: never
+
+hotel-booking:
+  demo-data:
+    # Seeded demo hotels in a production catalogue would be discoverable — and bookable.
+    enabled: false

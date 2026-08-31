@@ -1,0 +1,35 @@
+# Build context hygiene: the image build needs mvnw, .mvn, pom.xml and src — nothing else.
+# Everything excluded here is either rebuilt inside the container (target) or has no business
+# in an image at all (git history, local notes, run artifacts).
+
+.git
+.gitignore
+.gitattributes
+target
+.run
+.idea
+.vscode
+*.iml
+*.log
+.DS_Store
+
+# Local-only material
+README.local.md
+DIAGRAMS.local.md
+diagrams.local
+hotel-booking
+_sync_artifacts
+_sync.zip
+MANIFEST.sha256
+
+# Docs, scripts and API tooling — not part of the runtime image
+*.md
+docs
+db
+run.sh
+docker-compose.yml
+Dockerfile
+postman_collection.json
+postman_environment.json
+.github
+.editorconfig

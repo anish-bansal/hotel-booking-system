@@ -1,0 +1,28 @@
+# Editor-neutral formatting contract, so diffs argue about code rather than whitespace.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.java]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Trailing spaces are meaningful in Markdown (hard line break).
+trim_trailing_whitespace = false
+
+[*.{cmd,bat}]
+end_of_line = crlf

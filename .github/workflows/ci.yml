@@ -1,0 +1,129 @@
+# Four independent proofs, in the order they catch problems:
+#
+#   1. test         — the 97-test suite on H2, the default a contributor runs locally
+#   2. test-postgres — the SAME suite against real PostgreSQL 16, because the double-booking defence
+#                      rests on row-lock semantics H2 only approximates
+#   3. api-tests    — the Postman collection (57 assertions) against a booted jar, so the HTTP
+#                      contract is exercised end-to-end, not just the service layer
+#   4. docker-build — the image builds; catches Dockerfile drift the moment it happens
+#
+# Jobs run in parallel; none depends on another's artifacts, so a failure names its own cause.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (H2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build and test
+        run: ./mvnw -B clean verify
+      - name: Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-h2
+          path: target/surefire-reports
+
+  test-postgres:
+    name: Tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: hotelbooking_test
+          POSTGRES_USER: hotelbooking
+          POSTGRES_PASSWORD: hotelbooking
+        ports:
+          - 5432:5432
+        # The suite's first connection must find a ready server, not a starting container.
+        options: >-
+          --health-cmd "pg_isready -U hotelbooking -d hotelbooking_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Run the suite against PostgreSQL
+        run: ./mvnw -B test -Ppostgres-it
+      - name: Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-postgres
+          path: target/surefire-reports
+
+  api-tests:
+    name: API tests (newman)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Package (tests run in their own job)
+        run: ./mvnw -B package -DskipTests
+      - name: Start the service (H2, demo data)
+        run: |
+          java -jar target/hotel-booking-service-*.jar &
+          echo $! > app.pid
+      - name: Wait for readiness — the actuator, not the process
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
+              echo "up after ~$((i*2))s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "service never became healthy" >&2
+          exit 1
+      - name: Run the Postman collection
+        run: npx --yes newman@6 run postman_collection.json
+      - name: Stop the service
+        if: always()
+        run: kill "$(cat app.pid)" 2>/dev/null || true
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (not pushed — this job exists to catch Dockerfile drift)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: hotel-booking-service:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

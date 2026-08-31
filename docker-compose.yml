@@ -6,6 +6,27 @@
 # a bug in the application. run.sh waits on these healthchecks instead.
 
 services:
+  # The application itself, containerised. Gated behind a compose profile so that the existing
+  # workflows are untouched: `docker compose up -d postgres redis` (what run.sh issues) still starts
+  # only the databases. Opt in explicitly:
+  #
+  #   docker compose --profile app up --build
+  #
+  app:
+    profiles: ["app"]
+    build: .
+    container_name: hotel-booking-app
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres,prod
+      POSTGRES_HOST: postgres
+    depends_on:
+      postgres:
+        # The healthcheck, not container start — Postgres accepts connections several seconds after
+        # `up` returns, and the app's pool must not race that window.
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: hotel-booking-postgres
@@ -17,6 +38,10 @@ services:
       - "5432:5432"
     volumes:
       - hotel-booking-pgdata:/var/lib/postgresql/data
+      # Runs ONLY when the volume is empty (the image's init hook), so existing data is never
+      # touched. It is what lets the `app` service boot under `prod`'s ddl-auto=validate against a
+      # brand-new volume: the schema exists before the application's first connection.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
     healthcheck:
       # -U matters: without it pg_isready checks for the `root` role and reports healthy while the
       # application's role is still being created by the init scripts.
